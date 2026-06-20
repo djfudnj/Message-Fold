@@ -105,7 +105,7 @@
         const $text = $mes.find('.mes_text').first();
         if ($text.length && !$mes.find('.' + SUMMARY_CLASS).length) {
             const $summary = $(
-                `<div class="${SUMMARY_CLASS}">▶ 클릭하여 펼치기</div>`
+                `<div class="${SUMMARY_CLASS}">▶ Click to expand"</div>`
             );
             $summary.hide();
             $text.after($summary);
