@@ -1,0 +1,18 @@
+.mes-collapse-summary {
+    padding: 4px 10px;
+    margin: 2px 0;
+    font-size: 0.85em;
+    font-style: italic;
+    opacity: 0.65;
+    cursor: pointer;
+    border-left: 2px solid currentColor;
+    user-select: none;
+}
+
+.mes-collapse-summary:hover {
+    opacity: 0.9;
+}
+
+.mes-collapse-btn {
+    cursor: pointer;
+}
