@@ -1,6 +1,6 @@
 .mes-collapse-summary {
     cursor: pointer;
-    font-style: italic;
+    font-size: 0.95em;
     opacity: 0.65;
     box-sizing: border-box;
     user-select: none;
