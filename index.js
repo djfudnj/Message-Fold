@@ -27,12 +27,40 @@
         return STORAGE_PREFIX + getChatKey() + '_' + mesId;
     }
 
+    function syncSummaryStyle($mes) {
+        const $text = $mes.find('.mes_text').first();
+        const $summary = $mes.find('.' + SUMMARY_CLASS).first();
+        if (!$text.length || !$summary.length) return;
+
+        // 호출될 때마다 "현재" 테마 기준으로 다시 읽어옴 (한 번 박아두고 끝내지 않음)
+        const cs = window.getComputedStyle($text[0]);
+        $summary.css({
+            padding: cs.padding,
+            margin: cs.margin,
+            fontFamily: cs.fontFamily,
+            fontSize: cs.fontSize,
+            lineHeight: cs.lineHeight,
+            color: cs.color,
+        });
+    }
+
+    function refreshAllVisibleSummaries() {
+        $('#chat .mes').each(function () {
+            const $mes = $(this);
+            const $summary = $mes.find('.' + SUMMARY_CLASS).first();
+            if ($summary.length && $summary.is(':visible')) {
+                syncSummaryStyle($mes);
+            }
+        });
+    }
+
     function setCollapsed($mes, collapsed) {
         const $text = $mes.find('.mes_text').first();
         const $summary = $mes.find('.' + SUMMARY_CLASS).first();
         const $btn = $mes.find('.' + BTN_CLASS).first();
 
         if (collapsed) {
+            syncSummaryStyle($mes); // 보여주기 직전에 최신 테마 스타일로 갱신
             $text.hide();
             $summary.show();
             $btn.removeClass('fa-compress').addClass('fa-expand').attr('title', '펼치기');
@@ -79,21 +107,9 @@
             const $summary = $(
                 `<div class="${SUMMARY_CLASS}">📄 내용이 접혀 있습니다 — 클릭하여 펼치기</div>`
             );
-
-            // 클래스를 공유하지 않고, 실제 .mes_text의 계산된 스타일(현재 테마 기준)을
-            // 읽어서 그대로 적용 -> 테마가 바뀌어도 항상 본문과 동일한 여백/폰트 유지
-            const cs = window.getComputedStyle($text[0]);
-            $summary.css({
-                padding: cs.padding,
-                margin: cs.margin,
-                fontFamily: cs.fontFamily,
-                fontSize: cs.fontSize,
-                lineHeight: cs.lineHeight,
-                color: cs.color,
-            });
-
             $summary.hide();
             $text.after($summary);
+            syncSummaryStyle($mes);
         }
 
         const mesId = getMesId($mes);
@@ -182,6 +198,11 @@
             });
             observer.observe(chatEl, { childList: true, subtree: false });
         }
+
+        // 테마 전환 감지: <head> 안의 <style>/<link> 변경 시에만 반응 (폴링 아님)
+        // 토글 없이 테마만 바꿔도 현재 펼쳐진 요약바들이 즉시 새 테마 여백/폰트로 갱신됨
+        const headObserver = new MutationObserver(() => refreshAllVisibleSummaries());
+        headObserver.observe(document.head, { childList: true, subtree: true, characterData: true });
     }
 
     if (document.readyState === 'loading') {
