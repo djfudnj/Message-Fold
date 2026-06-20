@@ -1,3 +1,11 @@
+## WIP WIP WIP WIPWIPWIPWIWPIWP 연습중 완성아님
+
+
+
+
+
+
+
 # 메시지 접기 (SillyTavern 확장)
 
 채팅 메시지 옆에 접기/펼치기 버튼을 추가합니다. `<details>`처럼 내용을 화면에서만 숨기며,
