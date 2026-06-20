@@ -1,12 +1,11 @@
 .mes-collapse-summary {
-    padding: 4px 10px;
-    margin: 2px 0;
-    font-size: 0.85em;
+    cursor: pointer;
     font-style: italic;
     opacity: 0.65;
-    cursor: pointer;
     border-left: 2px solid currentColor;
+    box-sizing: border-box;
     user-select: none;
+    transition: opacity 0.2s;
 }
 
 .mes-collapse-summary:hover {
