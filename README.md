@@ -7,6 +7,8 @@ Adds a collapse/expand button next to each chat message. It hides the content fr
 * Depending on your SillyTavern version, the class name for the message button area may vary. If the button does not appear, please check the browser console (F12) for any errors.
 * This extension only toggles the `display` property of `.mes_text`. It does not modify the message data itself, nor does it send any requests to the server.
 
+<br>
+
 ## 메시지 접기 (SillyTavern 확장)
 
 채팅 메시지 옆에 접기/펼치기 버튼을 추가합니다. `<details>`처럼 내용을 화면에서만 숨기며,
