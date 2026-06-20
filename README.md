@@ -1,3 +1,11 @@
+## Collapse Messages (SillyTavern Extension)
+
+Adds a collapse/expand button next to each chat message. It hides the content from the screen only (similar to the `<details>` tag), **leaving the actual message text, chat data (`chat.jsonl`), and the context sent to the AI completely untouched.** The collapse state is saved strictly within the browser's `localStorage` (it will not sync across different devices or browsers).
+
+## Notes
+
+* Depending on your SillyTavern version, the class name for the message button area may vary. If the button does not appear, please check the browser console (F12) for any errors.
+* This extension only toggles the `display` property of `.mes_text`. It does not modify the message data itself, nor does it send any requests to the server.
 
 ## 메시지 접기 (SillyTavern 확장)
 
