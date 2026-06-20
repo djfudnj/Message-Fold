@@ -79,6 +79,19 @@
             const $summary = $(
                 `<div class="${SUMMARY_CLASS}">📄 내용이 접혀 있습니다 — 클릭하여 펼치기</div>`
             );
+
+            // 클래스를 공유하지 않고, 실제 .mes_text의 계산된 스타일(현재 테마 기준)을
+            // 읽어서 그대로 적용 -> 테마가 바뀌어도 항상 본문과 동일한 여백/폰트 유지
+            const cs = window.getComputedStyle($text[0]);
+            $summary.css({
+                padding: cs.padding,
+                margin: cs.margin,
+                fontFamily: cs.fontFamily,
+                fontSize: cs.fontSize,
+                lineHeight: cs.lineHeight,
+                color: cs.color,
+            });
+
             $summary.hide();
             $text.after($summary);
         }
@@ -115,11 +128,39 @@
         toggleCollapse($(this).closest('.mes'));
     });
 
+    function bindToEventSource() {
+        // getContext() 안에 eventSource/event_types가 들어있음 (window.SillyTavern 바로 아래 X)
+        try {
+            const ctx = window.SillyTavern?.getContext?.();
+            const eventSource = ctx?.eventSource;
+            const event_types = ctx?.event_types;
+            if (!eventSource || !event_types) return false;
+
+            const onRendered = (mesId) => {
+                const $mes = $(`#chat .mes[mesid="${mesId}"]`);
+                if ($mes.length) ensureUi($mes);
+            };
+
+            if (event_types.CHARACTER_MESSAGE_RENDERED) {
+                eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onRendered);
+            }
+            if (event_types.USER_MESSAGE_RENDERED) {
+                eventSource.on(event_types.USER_MESSAGE_RENDERED, onRendered);
+            }
+            return true;
+        } catch (e) {
+            return false; // 이벤트 API 사용 불가 -> 아래 MutationObserver가 대신 처리
+        }
+    }
+
     function init() {
         // 확장 로드 시점에 이미 화면에 떠 있는 메시지들 1회 전체 스캔
         scan();
 
-        // 이후로는 새로 추가된 노드만 골라서 처리 (전체 재스캔 X)
+        // 가능하면 ST 공식 이벤트로 정확한 타이밍에 훅 (실패해도 무방, 아래 observer가 백업)
+        bindToEventSource();
+
+        // 새로 추가된 노드만 골라서 처리 (전체 재스캔 X) - 이벤트 API 유무와 무관하게 항상 동작하는 안전망
         const chatEl = document.getElementById('chat');
         if (chatEl) {
             const observer = new MutationObserver((mutations) => {
