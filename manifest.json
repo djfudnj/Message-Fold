@@ -1,12 +1,11 @@
 {
-  "display_name": "Message Fold (메시지 접기)",
-  "loading_order": 1,
-  "requires": [],
-  "optional": [],
-  "js": "index.js",
-  "css": "style.css",
-  "author": "user",
-  "version": "1.0.0",
-  "homePage": "https://github.com/djfudnj/Message-Fold",
-  "auto_update": false
+    "display_name": "Message Fold",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "nunca",
+    "version": "2.0.0",
+    "homePage": ""
 }

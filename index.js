@@ -1,220 +1,200 @@
-(function () {
-    'use strict';
+// Message Fold (Persistent)
+// 메시지 객체의 extra.folded 값(true/없음)으로 접힘 상태를 저장합니다.
+// is_system 처럼 chat.jsonl 에 함께 저장되므로 기기/브라우저가 달라도 유지됩니다.
 
-    // 이 확장은 채팅 데이터(chat 배열, chat.jsonl)에는 손대지 않습니다.
-    // 오직 화면에 보이는 DOM(.mes_text)의 display 속성만 토글하고,
-    // 접힘 상태는 브라우저 localStorage 에만 저장합니다.
+import { chat, eventSource, event_types, saveChatConditional } from '../../../../script.js';
 
-    // 브라우저 언어가 한국어('ko')로 시작하면 한국어, 그 외에는 영어로 설정
-    const isKorean = navigator.language.startsWith('ko');
+const KEY = 'folded';
 
-    const TEXT_SUMMARY = isKorean 
-        ? "▶ 펼치기" 
-        : "▶ Click to expand";
+const isFolded = (id) => !!chat[id]?.extra?.[KEY];
 
-    const BTN_CLASS = 'mes-collapse-btn';
-    const SUMMARY_CLASS = 'mes-collapse-summary';
-    const STORAGE_PREFIX = 'st_mesCollapse_';
+// 테마가 덮어써도 바가 항상 보이도록 인라인 !important 로 지정
+function setImportant(el, styles) {
+    for (const [prop, val] of Object.entries(styles)) {
+        el.style.setProperty(prop, val, 'important');
+    }
+}
 
-    function getChatKey() {
-        try {
-            const ctx = window.SillyTavern?.getContext?.();
-            return String(ctx?.chatId ?? ctx?.characterId ?? ctx?.name2 ?? 'default');
-        } catch (e) {
-            return 'default';
-        }
+function clearImportant(el, props) {
+    props.forEach((p) => el.style.removeProperty(p));
+}
+
+const FIX_PROPS = ['height', 'min-height', 'max-height', 'overflow'];
+
+function styleBar(ph, folded, block) {
+    if (!folded) {
+        setImportant(ph, { display: 'none' });
+        return;
+    }
+    // .mes_block 의 좌우 padding 만큼 바깥으로 확장해서 블록 전체 폭에 맞춤
+    let pl = 0;
+    let pr = 0;
+    if (block) {
+        const cs = getComputedStyle(block);
+        pl = parseFloat(cs.paddingLeft) || 0;
+        pr = parseFloat(cs.paddingRight) || 0;
+    }
+    // .mes_block 의 폭을 그대로 따라가며, 테마 색상 변수로 배경/테두리를 입힘
+    setImportant(ph, {
+        display: 'flex',
+        'align-items': 'center',
+        gap: '8px',
+        width: `calc(100% + ${pl + pr}px)`,
+        'min-height': 'var(--mf-min-height, 34px)',
+        'box-sizing': 'border-box',
+        padding: '6px 10px',
+        'margin-left': `${-pl}px`,
+        'margin-right': `${-pr}px`,
+        'margin-top': '0',
+        'margin-bottom': '0',
+        position: 'relative',
+        visibility: 'visible',
+        opacity: '1',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        color: 'var(--SmartThemeBodyColor, #ddd)',
+        background: 'var(--SmartThemeBlurTintColor, rgba(128,128,128,.18))',
+        border: '1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.5))',
+        'border-radius': '8px',
+        'font-size': '13px',
+        'line-height': '1.4',
+    });
+}
+
+function makePreview(id) {
+    const msg = chat[id];
+    const raw = String(msg?.mes ?? '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/[*_`#>~]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const snippet = raw.length > 60 ? raw.slice(0, 60) + '…' : raw;
+    return { name: msg?.name ?? '', snippet };
+}
+
+function render(mes, folded) {
+    mes.classList.toggle('mf-folded', folded);
+
+    const icon = mes.querySelector('.mes_fold');
+    if (icon) {
+        icon.classList.toggle('fa-chevron-up', !folded);
+        icon.classList.toggle('fa-chevron-down', folded);
+        icon.title = folded ? '메시지 펼치기' : '메시지 접기';
     }
 
-    function getMesId($mes) {
-        const v = $mes.attr('mesid') ?? $mes.attr('data-mesid') ?? $mes.data('mesid');
-        return v === undefined || v === null ? null : String(v);
-    }
-
-    function storageKey(mesId) {
-        return STORAGE_PREFIX + getChatKey() + '_' + mesId;
-    }
-
-    function syncSummaryStyle($mes) {
-        const $text = $mes.find('.mes_text').first();
-        const $summary = $mes.find('.' + SUMMARY_CLASS).first();
-        if (!$text.length || !$summary.length) return;
-
-        // 호출될 때마다 "현재" 테마 기준으로 다시 읽어옴 (한 번 박아두고 끝내지 않음)
-        const cs = window.getComputedStyle($text[0]);
-        $summary.css({
-            padding: cs.padding,
-            margin: cs.margin,
-            fontFamily: cs.fontFamily,
-            fontSize: cs.fontSize,
-            lineHeight: cs.lineHeight,
-            color: cs.color,
-        });
-    }
-
-    function refreshAllVisibleSummaries() {
-        $('#chat .mes').each(function () {
-            const $mes = $(this);
-            const $summary = $mes.find('.' + SUMMARY_CLASS).first();
-            if ($summary.length && $summary.is(':visible')) {
-                syncSummaryStyle($mes);
-            }
-        });
-    }
-
-    function setCollapsed($mes, collapsed) {
-        const $text = $mes.find('.mes_text').first();
-        const $summary = $mes.find('.' + SUMMARY_CLASS).first();
-        const $btn = $mes.find('.' + BTN_CLASS).first();
-
-        if (collapsed) {
-            syncSummaryStyle($mes); // 보여주기 직전에 최신 테마 스타일로 갱신
-            $text.hide();
-            $summary.show();
-            $btn.removeClass('fa-compress').addClass('fa-expand').attr('title', '펼치기');
-        } else {
-            $text.show();
-            $summary.hide();
-            $btn.removeClass('fa-expand').addClass('fa-compress').attr('title', '접기');
-        }
-    }
-
-    function toggleCollapse($mes) {
-        const $text = $mes.find('.mes_text').first();
-        if (!$text.length) return;
-
-        const willCollapse = $text.is(':visible');
-        setCollapsed($mes, willCollapse);
-
-        const mesId = getMesId($mes);
-        if (mesId !== null) {
-            try {
-                localStorage.setItem(storageKey(mesId), willCollapse ? 'true' : 'false');
-            } catch (e) {
-                /* localStorage 사용 불가 시 무시 (상태 저장만 안 될 뿐 기능엔 영향 없음) */
-            }
-        }
-    }
-
-    function ensureUi($mes) {
-        if ($mes.find('.' + BTN_CLASS).length) return;
-
-        const $btnHost = $mes.find('.extraMesButtons').first().length
-            ? $mes.find('.extraMesButtons').first()
-            : $mes.find('.mes_buttons').first();
-
-        if (!$btnHost.length) return;
-
-        const $btn = $(
-            `<div class="mes_button ${BTN_CLASS} fa-solid fa-compress interactable" title="접기" tabindex="0"></div>`
-        );
-        $btnHost.prepend($btn);
-
-        const $text = $mes.find('.mes_text').first();
-        if ($text.length && !$mes.find('.' + SUMMARY_CLASS).length) {
-            const $summary = $(
-                `<div class="${SUMMARY_CLASS}">▶ Click to expand</div>`
-            );
-            $summary.hide();
-            $text.after($summary);
-            syncSummaryStyle($mes);
-        }
-
-        const mesId = getMesId($mes);
-        if (mesId !== null) {
-            let saved = null;
-            try {
-                saved = localStorage.getItem(storageKey(mesId));
-            } catch (e) {
-                /* ignore */
-            }
-            if (saved === 'true') {
-                setCollapsed($mes, true);
-            }
-        }
-    }
-
-    function scan() {
-        $('#chat .mes').each(function () {
-            ensureUi($(this));
-        });
-    }
-
-    $(document).on('click', '.' + BTN_CLASS, function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleCollapse($(this).closest('.mes'));
+    // 높이만 풀어줌 (display/padding/폭은 테마 그대로 유지)
+    const block = mes.querySelector('.mes_block');
+    [mes, block].forEach((el) => {
+        if (!el) return;
+        if (folded) setImportant(el, { height: 'auto', 'min-height': '0', 'max-height': 'none', overflow: 'visible' });
+        else clearImportant(el, FIX_PROPS);
     });
 
-    $(document).on('click', '.' + SUMMARY_CLASS, function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleCollapse($(this).closest('.mes'));
+    const ph = mes.querySelector('.mf-placeholder');
+    if (ph) {
+        if (folded) {
+            const { name, snippet } = makePreview(Number(mes.getAttribute('mesid')));
+            ph.replaceChildren();
+            const arrow = document.createElement('span');
+            arrow.textContent = '▶';
+            const nm = document.createElement('b');
+            nm.textContent = name;
+            nm.style.setProperty('flex', '0 0 auto');
+            const tx = document.createElement('span');
+            tx.textContent = snippet ? `— ${snippet}` : '';
+            setImportant(tx, { 'min-width': '0', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap', opacity: '0.8' });
+            ph.append(arrow, nm, tx);
+        }
+        styleBar(ph, folded, block);
+    }
+}
+
+function decorate(mes) {
+    const id = Number(mes.getAttribute('mesid'));
+    if (Number.isNaN(id) || !chat[id]) return;
+
+    // 메시지 액션 버튼
+    const buttons = mes.querySelector('.extraMesButtons');
+    if (buttons && !buttons.querySelector('.mes_fold')) {
+        const btn = document.createElement('div');
+        btn.className = 'mes_button mes_fold fa-solid fa-chevron-up interactable';
+        btn.tabIndex = 0;
+        btn.title = '메시지 접기';
+        buttons.prepend(btn);
+    }
+
+    // 접혔을 때 메시지를 대신할 한 줄 바 (.mes_block 안 -> 기존 메시지 블록과 폭 동일)
+    if (!mes.querySelector('.mf-placeholder')) {
+        const ph = document.createElement('div');
+        ph.className = 'mf-placeholder';
+        ph.title = '클릭하여 펼치기';
+        ph.tabIndex = 0;
+        (mes.querySelector('.mes_block') ?? mes).append(ph);
+    }
+
+    render(mes, isFolded(id));
+}
+
+function refreshAll() {
+    document.querySelectorAll('#chat .mes').forEach(decorate);
+}
+
+let scheduled = false;
+function scheduleRefresh() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+        scheduled = false;
+        refreshAll();
+    });
+}
+
+async function toggle(mes) {
+    const id = Number(mes.getAttribute('mesid'));
+    const msg = chat[id];
+    if (!msg) return;
+
+    msg.extra ??= {};
+    if (msg.extra[KEY]) delete msg.extra[KEY];
+    else msg.extra[KEY] = true;
+
+    render(mes, !!msg.extra[KEY]);
+    await saveChatConditional();
+}
+
+jQuery(() => {
+    const chatEl = document.getElementById('chat');
+    if (!chatEl) return;
+
+    chatEl.addEventListener('click', (e) => {
+        const target = e.target.closest('.mes_fold, .mf-placeholder');
+        if (!target) return;
+        const mes = target.closest('.mes');
+        if (mes) toggle(mes);
+    });
+    chatEl.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const t = e.target.closest?.('.mes_fold, .mf-placeholder');
+        if (t) {
+            e.preventDefault();
+            toggle(t.closest('.mes'));
+        }
     });
 
-    function bindToEventSource() {
-        // getContext() 안에 eventSource/event_types가 들어있음 (window.SillyTavern 바로 아래 X)
-        try {
-            const ctx = window.SillyTavern?.getContext?.();
-            const eventSource = ctx?.eventSource;
-            const event_types = ctx?.event_types;
-            if (!eventSource || !event_types) return false;
+    new MutationObserver(scheduleRefresh).observe(chatEl, { childList: true });
 
-            const onRendered = (mesId) => {
-                const $mes = $(`#chat .mes[mesid="${mesId}"]`);
-                if ($mes.length) ensureUi($mes);
-            };
+    [
+        'CHAT_CHANGED',
+        'CHARACTER_MESSAGE_RENDERED',
+        'USER_MESSAGE_RENDERED',
+        'MESSAGE_UPDATED',
+        'MESSAGE_EDITED',
+        'MESSAGE_SWIPED',
+        'MESSAGE_DELETED',
+        'MORE_MESSAGES_LOADED',
+    ].forEach((name) => {
+        if (event_types[name]) eventSource.on(event_types[name], scheduleRefresh);
+    });
 
-            if (event_types.CHARACTER_MESSAGE_RENDERED) {
-                eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, onRendered);
-            }
-            if (event_types.USER_MESSAGE_RENDERED) {
-                eventSource.on(event_types.USER_MESSAGE_RENDERED, onRendered);
-            }
-            return true;
-        } catch (e) {
-            return false; // 이벤트 API 사용 불가 -> 아래 MutationObserver가 대신 처리
-        }
-    }
-
-    function init() {
-        // 확장 로드 시점에 이미 화면에 떠 있는 메시지들 1회 전체 스캔
-        scan();
-
-        // 가능하면 ST 공식 이벤트로 정확한 타이밍에 훅 (실패해도 무방, 아래 observer가 백업)
-        bindToEventSource();
-
-        // 새로 추가된 노드만 골라서 처리 (전체 재스캔 X) - 이벤트 API 유무와 무관하게 항상 동작하는 안전망
-        const chatEl = document.getElementById('chat');
-        if (chatEl) {
-            const observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.nodeType !== 1) return; // 텍스트 노드 등은 무시
-
-                        const $node = $(node);
-                        if ($node.hasClass('mes')) {
-                            ensureUi($node);
-                        } else {
-                            // 혹시 .mes가 래퍼 노드 안에 중첩되어 추가되는 경우 대비
-                            $node.find('.mes').each(function () {
-                                ensureUi($(this));
-                            });
-                        }
-                    });
-                }
-            });
-            observer.observe(chatEl, { childList: true, subtree: false });
-        }
-
-        // 테마 전환 감지: <head> 안의 <style>/<link> 변경 시에만 반응 (폴링 아님)
-        // 토글 없이 테마만 바꿔도 현재 펼쳐진 요약바들이 즉시 새 테마 여백/폰트로 갱신됨
-        const headObserver = new MutationObserver(() => refreshAllVisibleSummaries());
-        headObserver.observe(document.head, { childList: true, subtree: true, characterData: true });
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
-})();
+    scheduleRefresh();
+});
