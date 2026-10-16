@@ -79,7 +79,7 @@ function render(mes, folded) {
     if (icon) {
         icon.classList.toggle('fa-chevron-up', !folded);
         icon.classList.toggle('fa-chevron-down', folded);
-        icon.title = folded ? '메시지 펼치기' : '메시지 접기';
+        icon.title = folded ? 'Message Open' : 'Message Close';
     }
 
     // 높이만 풀어줌 (display/padding/폭은 테마 그대로 유지)
@@ -127,7 +127,7 @@ function decorate(mes) {
     if (!mes.querySelector('.mf-placeholder')) {
         const ph = document.createElement('div');
         ph.className = 'mf-placeholder';
-        ph.title = '클릭하여 펼치기';
+        ph.title = 'Click to open';
         ph.tabIndex = 0;
         (mes.querySelector('.mes_block') ?? mes).append(ph);
     }
