@@ -75,3 +75,19 @@
 .mf-placeholder:hover {
     filter: brightness(1.25);
 }
+
+/* ===== Long press 시각 피드백 (팝업 직전에만, 서서히 진해짐) ===== */
+#chat .mes.lpd-pressing {
+    animation: lpd-hold var(--lpd-hold, 250ms) linear forwards;
+}
+
+/* iOS 길게 누르기 콜아웃만 방지 (텍스트 선택은 막지 않음) */
+#chat .mes.lpd-touch,
+#chat .mes.lpd-touch * {
+    -webkit-touch-callout: none;
+}
+
+@keyframes lpd-hold {
+    from { box-shadow: inset 0 0 0 1.5px rgb(100 0 0 / 10%); }
+    to   { box-shadow: inset 0 0 0 1.5px rgb(100 0 0 / 50%); }
+}

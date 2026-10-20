@@ -1,11 +1,11 @@
 {
-    "display_name": "Message Fold",
+    "display_name": "Message Fold and Delete",
     "loading_order": 100,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
     "author": "nunca",
-    "version": "2.0.0",
+    "version": "1.0.0",
     "homePage": ""
 }
