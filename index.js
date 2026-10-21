@@ -6,7 +6,7 @@
 //  - 접힌(저장된) 메시지의 바를 누르면 "임시로" 펼쳐집니다. (저장 상태는 변하지 않음)
 //  - 펼쳐진 메시지 안을 누르면 그대로 유지, 다른 메시지/빈 곳을 누르면 다시 접힙니다.
 //  - 저장된 접힘 상태는 메시지 액션의 아이콘(접기 설정 ↔ 접기 해제)으로 바뀝니다.
-//  - 메시지를 길게 누르면 팝업이 뜨고 Delete / Fold(Unfold) / Cancel 을 고를 수 있습니다.
+//  - 메시지(접힌 바 포함)를 길게 누르면 팝업이 뜨고 Delete / Hide(Unhide) / Fold(Unfold) / Cancel 을 고를 수 있습니다.
 
 import { chat, eventSource, event_types, saveChatConditional } from '../../../../script.js';
 
@@ -21,7 +21,8 @@ const TITLE_UNSET = 'Unfold message';
 // ===== 길게 누르기 설정 =====
 const HOLD_MS_MOUSE = 810;  // 마우스 길게 누르기 시간
 const HOLD_MS_TOUCH = 900;  // 터치(모바일) 길게 누르기 시간
-const VISUAL_MS = 300;      // 팝업 직전 이 시간 동안만 테두리 표시
+const VISUAL_MS = 300;      // 팝업 직전 이 시간 동안 테두리가 서서히 진해짐
+const AFTER_POPUP_MS = 200; // 팝업이 뜬 뒤에도 테두리를 유지하는 시간
 const MOVE_TOLERANCE = 10;  // px
 const LP_IGNORE = 'a, button, input, textarea, select, .mes_buttons, .mes_edit_buttons, .swipe_left, .swipe_right, .swipes-counter, .extraMesButtons, .mes_img_container, .mes_reasoning_details, [contenteditable="true"], .mes_text img, .mes_text video, .mes_text audio, .mes_text canvas';
 
@@ -335,24 +336,32 @@ async function showLongPressMenu(mes) {
     const name = chat[id].name || '';
     const { snippet } = makePreview(id);
     const folded = isFolded(id);
+    const hidden = !!chat[id].is_system;   // /hide 로 숨김 처리된 메시지
 
-    const html = `<h3>Delete this message?</h3>
+    const html = `<h3>Message options</h3>
         <div style="text-align:left;opacity:.8;margin-top:8px">
             <b>#${id}</b> ${escapeHtml(name)}<br>${escapeHtml(snippet)}
         </div>`;
 
     const { callGenericPopup, POPUP_TYPE, POPUP_RESULT, executeSlashCommandsWithOptions } = ctx();
-    const CUSTOM_FOLD = POPUP_RESULT?.CUSTOM1 ?? 1001;
+    const CUSTOM_DELETE = POPUP_RESULT?.CUSTOM1 ?? 1001;
+    const CUSTOM_HIDE = POPUP_RESULT?.CUSTOM2 ?? 1002;
 
-    let action = null; // 'delete' | 'fold' | null
+    let action = null; // 'delete' | 'hide' | 'fold' | null
     if (callGenericPopup && POPUP_TYPE) {
+        // 커스텀 버튼은 OK 버튼 앞에 순서대로 들어가므로
+        // [Delete] [Hide] [Fold(OK)] [Cancel] 순서가 됩니다. (Delete 가 제일 왼쪽)
         const result = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', {
-            okButton: 'Delete',
+            okButton: folded ? 'Unfold' : 'Fold',
             cancelButton: 'Cancel',
-            customButtons: [{ text: folded ? 'Unfold' : 'Fold', result: CUSTOM_FOLD }],
+            customButtons: [
+                { text: 'Delete', result: CUSTOM_DELETE },
+                { text: hidden ? 'Unhide' : 'Hide', result: CUSTOM_HIDE },
+            ],
         });
-        if (POPUP_RESULT ? result === POPUP_RESULT.AFFIRMATIVE : result === true) action = 'delete';
-        else if (result === CUSTOM_FOLD) action = 'fold';
+        if (result === CUSTOM_DELETE) action = 'delete';
+        else if (result === CUSTOM_HIDE) action = 'hide';
+        else if (POPUP_RESULT ? result === POPUP_RESULT.AFFIRMATIVE : result === true) action = 'fold';
     } else if (window.confirm('Delete this message?')) {
         action = 'delete';
     }
@@ -363,6 +372,10 @@ async function showLongPressMenu(mes) {
 
     if (action === 'fold') {
         await toggleFold(mes);
+    } else if (action === 'hide') {
+        // hide 는 is_system = true, unhide 는 false 로 저장됩니다.
+        await executeSlashCommandsWithOptions(`/${hidden ? 'unhide' : 'hide'} ${id}`);
+        if (mes.isConnected) render(mes);   // 접힌 바의 유령 아이콘 갱신
     } else {
         await executeSlashCommandsWithOptions(`/cut ${id}`);
     }
@@ -374,6 +387,17 @@ function initLongPress(chatEl) {
     let pressedMes = null;
     let startX = 0, startY = 0;
     let fired = false;
+    let releaseTimer = null;   // 팝업 뜬 뒤 테두리를 잠깐 유지했다가 지우는 타이머
+    let releaseMes = null;
+
+    const releaseNow = () => {
+        clearTimeout(releaseTimer);
+        releaseTimer = null;
+        if (releaseMes) {
+            releaseMes.classList.remove('lpd-pressing', 'lpd-touch');
+            releaseMes = null;
+        }
+    };
 
     const cancel = () => {
         clearTimeout(timer);
@@ -400,6 +424,7 @@ function initLongPress(chatEl) {
         // 터치 + 본문 영역: 텍스트 선택을 방해하지 않도록 길게 누르기를 시작하지 않음
         if (isTouch && TOUCH_TEXT_SELECTABLE && e.target.closest('.mes_text') && isOnText(e.clientX, e.clientY)) return;
 
+        releaseNow();
         cancel();
         const holdMs = isTouch ? HOLD_MS_TOUCH : HOLD_MS_MOUSE;
         const visualMs = Math.min(VISUAL_MS, holdMs);
@@ -427,7 +452,17 @@ function initLongPress(chatEl) {
             }
 
             fired = true;
-            cancel();
+            // 타이머만 정리하고, 테두리 클래스는 AFTER_POPUP_MS 뒤에 제거
+            clearTimeout(timer);
+            clearTimeout(showTimer);
+            timer = null;
+            showTimer = null;
+            pressedMes = null;
+            if (target) {
+                target.classList.add('lpd-pressing');
+                releaseMes = target;
+                releaseTimer = setTimeout(releaseNow, AFTER_POPUP_MS);
+            }
             window.getSelection()?.removeAllRanges();
             navigator.vibrate?.(30);
             if (target) showLongPressMenu(target);
