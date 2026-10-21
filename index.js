@@ -40,7 +40,9 @@ const LP_IGNORE = 'a, button, input, textarea, select, .mes_buttons, .mes_edit_b
 const TOUCH_TEXT_SELECTABLE = true;
 
 // 글자 주변으로 이 값(px)만큼은 "글자 위"로 간주 (그 밖의 본문 여백은 길게 누르기 허용)
-const TEXT_HIT_PAD = 6;
+// 가로는 타이트하게(글자 오른쪽 빈 공간을 여백으로 인식), 세로는 줄 사이 틈을 글자로 취급
+const TEXT_HIT_PAD_X = 3;
+const TEXT_HIT_PAD_Y = 5;
 
 // 바깥 클릭으로 간주하지 않을 영역 (상단바, 하단 입력창, 팝업 등)
 const IGNORE_SELECTOR = [
@@ -500,39 +502,37 @@ async function showSelectionMenu(mes, info) {
 }
 
 // (x, y) 지점에 실제 글자가 있는지 판정 (본문 블록의 빈 공간은 false)
-function isOnText(x, y) {
-    let node = null;
-    let offset = 0;
-    if (document.caretPositionFromPoint) {
-        const p = document.caretPositionFromPoint(x, y);
-        if (!p) return false;
-        node = p.offsetNode;
-        offset = p.offset;
-    } else if (document.caretRangeFromPoint) {
-        const r = document.caretRangeFromPoint(x, y);
-        if (!r) return false;
-        node = r.startContainer;
-        offset = r.startOffset;
-    } else {
-        return true;
-    }
-    if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+// 본문(.mes_text) 안의 모든 텍스트 노드의 "줄 단위 사각형"과 직접 비교하므로
+// 줄 오른쪽 끝의 빈 공간도 정확히 여백으로 인식됨
+function isOnText(x, y, root) {
+    if (!root) return false;
+    const rb = root.getBoundingClientRect();
+    if (x < rb.left || x > rb.right || y < rb.top || y > rb.bottom) return false;
 
-    const len = node.textContent.length;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (n) => (n.nodeValue && n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
+    });
     const range = document.createRange();
-    const spans = [[Math.max(0, offset - 1), offset], [offset, Math.min(len, offset + 1)]];
-    for (const [a, b] of spans) {
-        if (a >= b) continue;
-        range.setStart(node, a);
-        range.setEnd(node, b);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        range.selectNodeContents(n);
         for (const rc of range.getClientRects()) {
-            if (x >= rc.left - TEXT_HIT_PAD && x <= rc.right + TEXT_HIT_PAD &&
-                y >= rc.top - TEXT_HIT_PAD && y <= rc.bottom + TEXT_HIT_PAD) {
+            if (rc.width === 0 || rc.height === 0) continue;
+            if (x >= rc.left - TEXT_HIT_PAD_X && x <= rc.right + TEXT_HIT_PAD_X &&
+                y >= rc.top - TEXT_HIT_PAD_Y && y <= rc.bottom + TEXT_HIT_PAD_Y) {
                 return true;
             }
         }
     }
     return false;
+}
+
+// 이벤트 target 이 .mes 밖(메시지 사이 틈, #chat 자체 등)일 때 좌표로 메시지를 찾음
+function findMesAtPoint(chatEl, x, y) {
+    for (const m of chatEl.querySelectorAll(':scope > .mes')) {
+        const r = m.getBoundingClientRect();
+        if (y >= r.top && y <= r.bottom && x >= r.left && x <= r.right) return m;
+    }
+    return null;
 }
 
 async function showLongPressMenu(mes) {
@@ -620,7 +620,7 @@ function initLongPress(chatEl) {
         clearTimeout(releaseTimer);
         releaseTimer = null;
         if (releaseMes) {
-            releaseMes.classList.remove('lpd-pressing', 'lpd-touch');
+            releaseMes.classList.remove('lpd-pressing', 'lpd-touch', 'lpd-nosel');
             releaseMes = null;
         }
     };
@@ -631,7 +631,7 @@ function initLongPress(chatEl) {
         timer = null;
         showTimer = null;
         if (pressedMes) {
-            pressedMes.classList.remove('lpd-pressing', 'lpd-touch');
+            pressedMes.classList.remove('lpd-pressing', 'lpd-touch', 'lpd-nosel');
             pressedMes = null;
         }
     };
@@ -683,8 +683,10 @@ function initLongPress(chatEl) {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         if (!styleEnabled()) return;
 
-        const mes = e.target.closest('.mes');
-        if (!mes || e.target.closest(LP_IGNORE)) return;
+        // .mes 밖(아바타 아래 빈 칸 등 래퍼/틈)을 눌러도 좌표로 메시지를 찾아 처리
+        let mes = e.target.closest?.('.mes') ?? null;
+        if (!mes && e.target === chatEl) mes = findMesAtPoint(chatEl, e.clientX, e.clientY);
+        if (!mes || e.target.closest?.(LP_IGNORE)) return;
         if (mes.querySelector('textarea.edit_textarea')) return; // 편집 중이면 무시
 
         const isTouch = e.pointerType !== 'mouse';
@@ -694,7 +696,7 @@ function initLongPress(chatEl) {
         const selHit = inText && hasSelection() && pointOnSelection(e.clientX, e.clientY);
 
         // 터치 + 본문 영역: 텍스트 선택을 방해하지 않도록 길게 누르기를 시작하지 않음
-        if (!selHit && isTouch && TOUCH_TEXT_SELECTABLE && inText && isOnText(e.clientX, e.clientY)) return;
+        if (!selHit && isTouch && TOUCH_TEXT_SELECTABLE && inText && isOnText(e.clientX, e.clientY, e.target.closest('.mes_text'))) return;
 
         releaseNow();
         cancel();
@@ -705,6 +707,11 @@ function initLongPress(chatEl) {
         pressedMes = mes;
         startX = e.clientX;
         startY = e.clientY;
+
+        // 터치 + 일반 길게 누르기: 누르고 있는 동안 이 메시지의 텍스트 선택을 막음
+        // (여백/아바타 아래를 길게 누를 때 브라우저가 가까운 단어를 자동 선택해
+        //  팝업보다 먼저 선택이 시작되는 것을 방지)
+        if (isTouch && mode === 'msg') mes.classList.add('lpd-nosel');
 
         // 테두리 피드백은 터치 + 일반 길게 누르기에서만
         if (isTouch && mode === 'msg') {
@@ -727,11 +734,20 @@ function initLongPress(chatEl) {
     });
     chatEl.addEventListener('pointerup', cancel);
     ['pointercancel', 'pointerleave'].forEach((ev) => chatEl.addEventListener(ev, () => {
-        // 모바일에서 선택된 글자를 누르고 있을 때는 브라우저가 pointercancel 을 보내도 계속 대기
-        // (손가락을 떼거나 크게 움직이거나 스크롤하면 취소됨)
-        if (pressTouch && mode === 'sel') return;
+        // 모바일: 길게 누르는 도중 브라우저가 pointercancel 을 보내는 경우가 있어
+        // (아바타 아래 빈 칸 등에서 팝업이 안 뜨던 원인) 터치는 여기서 취소하지 않음.
+        // 손가락을 떼면 touchend, 움직이면 touchmove / scroll 에서 취소됨.
+        if (pressTouch) return;
         cancel();
     }));
+    chatEl.addEventListener('touchend', cancel, { passive: true });
+    chatEl.addEventListener('touchcancel', cancel, { passive: true });
+    chatEl.addEventListener('touchmove', (e) => {
+        if (!timer) return;
+        const t = e.touches[0];
+        if (!t || Math.hypot(t.clientX - startX, t.clientY - startY) <= MOVE_TOLERANCE) return;
+        cancel();
+    }, { passive: true });
     chatEl.addEventListener('scroll', cancel, { passive: true });
 
     // (터치) 텍스트 선택이 시작되면 대기 취소
