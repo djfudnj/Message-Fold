@@ -420,24 +420,11 @@ async function showSelectionMenu(mes, info) {
     const CUSTOM_EDIT = POPUP_RESULT?.CUSTOM1 ?? 1001;
     const RESULT_CANCEL = POPUP_RESULT?.NEGATIVE ?? 0;
 
-    // 윗줄 [Edit selection] [Delete selection] / 아랫줄 가운데 [Cancel]
     const result = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', {
         okButton: 'Delete selection',
         cancelButton: 'Cancel',
         defaultResult: RESULT_CANCEL,
         customButtons: [{ text: 'Edit selection', result: CUSTOM_EDIT }],
-        onOpen: (popup) => {
-            const controls = popup.buttonControls;
-            const editBtn = controls?.querySelector(`[data-result="${CUSTOM_EDIT}"]`);
-            if (!controls || !editBtn) return;
-            const row = document.createElement('div');
-            row.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:10px 20px;';
-            row.append(editBtn, popup.okButton);
-            controls.style.flexDirection = 'column';
-            controls.style.alignItems = 'center';
-            controls.style.gap = '10px';
-            controls.prepend(row);
-        },
     });
 
     let action = null;
@@ -557,7 +544,7 @@ async function showLongPressMenu(mes) {
     let action = null; // 'delete' | 'hide' | 'fold' | null
     if (callGenericPopup && POPUP_TYPE) {
         // OK 버튼(빨간색) = Delete.
-        // 버튼 배치: 윗줄 [Hide] [Delete] [Fold] / 아랫줄 가운데 [Cancel]
+        // 버튼은 팝업 기본 배치(한 줄) 그대로 사용
         const result = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', {
             okButton: 'Delete',
             cancelButton: 'Cancel',
@@ -566,19 +553,6 @@ async function showLongPressMenu(mes) {
                 { text: hidden ? 'Unhide' : 'Hide', result: CUSTOM_HIDE },
                 { text: folded ? 'Unfold' : 'Fold', result: CUSTOM_FOLD },
             ],
-            onOpen: (popup) => {
-                const controls = popup.buttonControls;
-                const hideBtn = controls.querySelector(`[data-result="${CUSTOM_HIDE}"]`);
-                const foldBtn = controls.querySelector(`[data-result="${CUSTOM_FOLD}"]`);
-                if (!controls || !hideBtn || !foldBtn) return;
-                const row = document.createElement('div');
-                row.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:10px 20px;';
-                row.append(hideBtn, foldBtn, popup.okButton);
-                controls.style.flexDirection = 'column';
-                controls.style.alignItems = 'center';
-                controls.style.gap = '10px';
-                controls.prepend(row);   // Cancel 은 아랫줄 가운데에 남음
-            },
         });
         if (POPUP_RESULT ? result === POPUP_RESULT.AFFIRMATIVE : result === true) action = 'delete';
         else if (result === CUSTOM_HIDE) action = 'hide';
