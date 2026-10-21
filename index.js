@@ -30,6 +30,9 @@ const LP_IGNORE = 'a, button, input, textarea, select, .mes_buttons, .mes_edit_b
 // false: 본문 포함 어디서든 길게 누르기 작동 (단, 선택이 시작되면 취소)
 const TOUCH_TEXT_SELECTABLE = true;
 
+// 글자 주변으로 이 값(px)만큼은 "글자 위"로 간주 (그 밖의 본문 여백은 길게 누르기 허용)
+const TEXT_HIT_PAD = 6;
+
 // 바깥 클릭으로 간주하지 않을 영역 (상단바, 하단 입력창, 팝업 등)
 const IGNORE_SELECTOR = [
     '#top-bar',
@@ -289,6 +292,42 @@ const hasSelection = () => {
     return !!sel && !sel.isCollapsed && sel.toString().length > 0;
 };
 
+// (x, y) 지점에 실제 글자가 있는지 판정 (본문 블록의 빈 공간은 false)
+function isOnText(x, y) {
+    let node = null;
+    let offset = 0;
+    if (document.caretPositionFromPoint) {
+        const p = document.caretPositionFromPoint(x, y);
+        if (!p) return false;
+        node = p.offsetNode;
+        offset = p.offset;
+    } else if (document.caretRangeFromPoint) {
+        const r = document.caretRangeFromPoint(x, y);
+        if (!r) return false;
+        node = r.startContainer;
+        offset = r.startOffset;
+    } else {
+        return true;
+    }
+    if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+
+    const len = node.textContent.length;
+    const range = document.createRange();
+    const spans = [[Math.max(0, offset - 1), offset], [offset, Math.min(len, offset + 1)]];
+    for (const [a, b] of spans) {
+        if (a >= b) continue;
+        range.setStart(node, a);
+        range.setEnd(node, b);
+        for (const rc of range.getClientRects()) {
+            if (x >= rc.left - TEXT_HIT_PAD && x <= rc.right + TEXT_HIT_PAD &&
+                y >= rc.top - TEXT_HIT_PAD && y <= rc.bottom + TEXT_HIT_PAD) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 async function showLongPressMenu(mes) {
     const id = Number(mes.getAttribute('mesid'));
     if (Number.isNaN(id) || !chat[id]) return;
@@ -359,7 +398,7 @@ function initLongPress(chatEl) {
         const isTouch = e.pointerType !== 'mouse';
 
         // 터치 + 본문 영역: 텍스트 선택을 방해하지 않도록 길게 누르기를 시작하지 않음
-        if (isTouch && TOUCH_TEXT_SELECTABLE && e.target.closest('.mes_text')) return;
+        if (isTouch && TOUCH_TEXT_SELECTABLE && e.target.closest('.mes_text') && isOnText(e.clientX, e.clientY)) return;
 
         cancel();
         const holdMs = isTouch ? HOLD_MS_TOUCH : HOLD_MS_MOUSE;
