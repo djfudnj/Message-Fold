@@ -7,8 +7,11 @@
 //  - 펼쳐진 메시지 안을 누르면 그대로 유지, 다른 메시지/빈 곳을 누르면 다시 접힙니다.
 //  - 저장된 접힘 상태는 메시지 액션의 아이콘(접기 설정 ↔ 접기 해제)으로 바뀝니다.
 //  - 메시지(접힌 바 포함)를 길게 누르면 팝업이 뜨고 Hide(Unhide) / Delete / Fold(Unfold) / Cancel 을 고를 수 있습니다.
+//  - 글자를 드래그로 선택한 뒤 (드래그 끝에서 또는 선택 영역 위에서) 길게 누르면
+//    Edit selection / Edit message / Delete selection 팝업이 뜹니다.
+//  - 빨간 테두리 피드백은 터치(모바일)에서만 나타납니다.
 
-import { chat, eventSource, event_types, saveChatConditional } from '../../../../script.js';
+import { chat, eventSource, event_types, saveChatConditional, updateMessageBlock } from '../../../../script.js';
 
 const KEY = 'folded';
 
@@ -293,6 +296,169 @@ const hasSelection = () => {
     return !!sel && !sel.isCollapsed && sel.toString().length > 0;
 };
 
+// ===================== 선택한 텍스트 길게 누르기 메뉴 =====================
+
+const SEL_HIT_PAD = 4;
+
+// 현재 선택이 "한 메시지의 본문(.mes_text) 안"에 있을 때만 정보를 돌려줌
+function getSelectionInfo() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    const rawText = range.toString();
+    if (!rawText.trim()) return null;
+
+    const elOf = (n) => (n.nodeType === Node.ELEMENT_NODE ? n : n.parentElement);
+    const a = elOf(range.startContainer)?.closest('.mes_text');
+    const b = elOf(range.endContainer)?.closest('.mes_text');
+    if (!a || a !== b) return null;
+    const mes = a.closest('.mes');
+    if (!mes) return null;
+
+    // 앞뒤 공백은 제외 (더블클릭 선택 시 뒤 공백이 딸려오는 경우 대비)
+    const lead = rawText.length - rawText.trimStart().length;
+    const text = rawText.trim();
+
+    // 같은 글자가 여러 번 나올 때를 대비해, 선택 위치 앞에 같은 글자가 몇 번 있었는지 센다
+    const pre = document.createRange();
+    pre.selectNodeContents(a);
+    pre.setEnd(range.startContainer, range.startOffset);
+    const startOffset = pre.toString().length + lead;
+    const full = a.textContent;
+    let occurrence = 0;
+    for (let i = full.indexOf(text); i !== -1 && i < startOffset; i = full.indexOf(text, i + 1)) occurrence++;
+
+    return { mes, text, occurrence };
+}
+
+// (x, y) 가 현재 선택 영역 위인지
+function pointOnSelection(x, y) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    for (const rc of sel.getRangeAt(0).getClientRects()) {
+        if (x >= rc.left - SEL_HIT_PAD && x <= rc.right + SEL_HIT_PAD &&
+            y >= rc.top - SEL_HIT_PAD && y <= rc.bottom + SEL_HIT_PAD) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 화면에 보이는 글자를 저장된 원문(chat[id].mes)에서 찾음
+function findInRaw(raw, text, occurrence) {
+    const idx = [];
+    for (let i = raw.indexOf(text); i !== -1; i = raw.indexOf(text, i + 1)) idx.push(i);
+    if (!idx.length) return null;
+    const start = idx[occurrence] ?? (idx.length === 1 ? idx[0] : undefined);
+    return start === undefined ? null : { start, end: start + text.length };
+}
+
+// 메시지 본문을 통째로 교체하고 저장 (SillyTavern 기본 편집 저장과 같은 순서)
+async function setMessageText(id, next) {
+    const msg = chat[id];
+    if (!msg) return;
+    msg.mes = next;
+    if (Array.isArray(msg.swipes) && Number.isInteger(msg.swipe_id) && msg.swipes[msg.swipe_id] !== undefined) {
+        msg.swipes[msg.swipe_id] = next;
+    }
+    updateMessageBlock(id, msg);
+    await eventSource.emit(event_types.MESSAGE_EDITED, id);
+    await eventSource.emit(event_types.MESSAGE_UPDATED, id);
+    await saveChatConditional();
+}
+
+async function replaceSelection(id, text, occurrence, replacement) {
+    const raw = String(chat[id]?.mes ?? '');
+    const loc = findInRaw(raw, text, occurrence);
+    if (!loc) {
+        window.toastr?.warning('Could not locate the selected text in the message source.');
+        return;
+    }
+    await setMessageText(id, raw.slice(0, loc.start) + replacement + raw.slice(loc.end));
+}
+
+async function showSelectionMenu(mes, info, resetFired) {
+    const id = Number(mes.getAttribute('mesid'));
+    if (Number.isNaN(id) || !chat[id]) return;
+
+    const { text, occurrence } = info;
+    const name = chat[id].name || '';
+    const preview = text.length > 80 ? text.slice(0, 80) + '…' : text;
+
+    const html = `<h3>Selected text</h3>
+        <div style="text-align:left;opacity:.8;margin-top:8px">
+            <b>#${id}</b> ${escapeHtml(name)}<br>“${escapeHtml(preview)}”
+        </div>`;
+
+    const { callGenericPopup, POPUP_TYPE, POPUP_RESULT } = ctx();
+    if (!callGenericPopup || !POPUP_TYPE) return;
+
+    const CUSTOM_EDIT_SEL = POPUP_RESULT?.CUSTOM1 ?? 1001;
+    const CUSTOM_EDIT_ALL = POPUP_RESULT?.CUSTOM2 ?? 1002;
+    const RESULT_CANCEL = POPUP_RESULT?.NEGATIVE ?? 0;
+
+    const result = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', {
+        okButton: 'Delete selection',
+        cancelButton: 'Cancel',
+        defaultResult: RESULT_CANCEL,
+        customButtons: [
+            { text: 'Edit selection', result: CUSTOM_EDIT_SEL },
+            { text: 'Edit message', result: CUSTOM_EDIT_ALL },
+        ],
+        onOpen: (popup) => {
+            const controls = popup.buttonControls;
+            const selBtn = controls?.querySelector(`[data-result="${CUSTOM_EDIT_SEL}"]`);
+            const allBtn = controls?.querySelector(`[data-result="${CUSTOM_EDIT_ALL}"]`);
+            if (!controls || !selBtn || !allBtn) return;
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:10px 20px;';
+            row.append(selBtn, allBtn, popup.okButton);
+            controls.style.flexDirection = 'column';
+            controls.style.alignItems = 'center';
+            controls.style.gap = '10px';
+            controls.prepend(row);   // Cancel 은 아랫줄 가운데
+        },
+    });
+
+    let action = null;
+    if (POPUP_RESULT ? result === POPUP_RESULT.AFFIRMATIVE : result === true) action = 'delete';
+    else if (result === CUSTOM_EDIT_SEL) action = 'edit-selection';
+    else if (result === CUSTOM_EDIT_ALL) action = 'edit-message';
+    if (!action) return;
+
+    if (!mes.isConnected || Number(mes.getAttribute('mesid')) !== id) return;
+
+    if (action === 'edit-message') {
+        // SillyTavern 기본 편집 모드(연필 버튼)를 그대로 엶
+        resetFired();
+        if (!mes.querySelector('#curEditTextarea')) mes.querySelector('.mes_edit')?.click();
+        return;
+    }
+
+    // 원문에서 위치를 못 찾으면(마크다운/매크로/정규식 때문에 화면과 원문이 다른 경우) 미리 알림
+    if (!findInRaw(String(chat[id].mes ?? ''), text, occurrence)) {
+        window.toastr?.warning('Could not locate the selected text in the message source. Use "Edit message" instead.');
+        return;
+    }
+
+    if (action === 'delete') {
+        await replaceSelection(id, text, occurrence, '');
+        return;
+    }
+
+    // edit-selection
+    const edited = await callGenericPopup(
+        `<h3>Edit selection</h3><div style="text-align:left;opacity:.8;margin-top:8px"><b>#${id}</b> ${escapeHtml(name)}</div>`,
+        POPUP_TYPE.INPUT,
+        text,
+        { rows: 4, okButton: 'Save', cancelButton: 'Cancel' },
+    );
+    if (typeof edited !== 'string') return;
+    if (!mes.isConnected || Number(mes.getAttribute('mesid')) !== id) return;
+    if (edited === text) return;
+    await replaceSelection(id, text, occurrence, edited);
+}
+
 // (x, y) 지점에 실제 글자가 있는지 판정 (본문 블록의 빈 공간은 false)
 function isOnText(x, y) {
     let node = null;
@@ -398,12 +564,18 @@ async function showLongPressMenu(mes) {
 
 function initLongPress(chatEl) {
     let timer = null;       // 팝업을 띄우는 타이머
-    let showTimer = null;   // 테두리를 보여주기 시작하는 타이머
+    let showTimer = null;   // 테두리를 보여주기 시작하는 타이머 (터치 전용)
     let pressedMes = null;
     let startX = 0, startY = 0;
     let fired = false;
     let releaseTimer = null;   // 팝업 뜬 뒤 테두리를 잠깐 유지했다가 지우는 타이머
     let releaseMes = null;
+    // 'msg'  : 일반 길게 누르기
+    // 'drag' : 마우스로 드래그(선택) 중 → 멈춰서 누르고 있으면 선택 메뉴
+    // 'sel'  : 이미 선택된 글자 위에서 길게 누르기 → 선택 메뉴
+    let mode = 'msg';
+    let pressTouch = false;
+    let holdMs = HOLD_MS_MOUSE;
 
     const releaseNow = () => {
         clearTimeout(releaseTimer);
@@ -425,8 +597,53 @@ function initLongPress(chatEl) {
         }
     };
 
+    const fireSelection = () => {
+        const info = getSelectionInfo();
+        if (!info) {
+            cancel();
+            return;
+        }
+        fired = true;
+        cancel();
+        window.getSelection()?.removeAllRanges();
+        navigator.vibrate?.(30);
+        showSelectionMenu(info.mes, info, () => { fired = false; });
+    };
+
+    const fireMessage = () => {
+        const target = pressedMes;
+        fired = true;
+        // 타이머만 정리하고, 테두리 클래스는 AFTER_POPUP_MS 뒤에 제거
+        clearTimeout(timer);
+        clearTimeout(showTimer);
+        timer = null;
+        showTimer = null;
+        pressedMes = null;
+        // 빨간 테두리 피드백은 터치(모바일)에서만 보여줌. 컴퓨터(마우스)에서는 표시 안 함.
+        if (target && pressTouch) {
+            target.classList.add('lpd-pressing');
+            releaseMes = target;
+            releaseTimer = setTimeout(releaseNow, AFTER_POPUP_MS);
+        }
+        window.getSelection()?.removeAllRanges();
+        navigator.vibrate?.(30);
+        if (target) showLongPressMenu(target);
+    };
+
+    const onHold = () => {
+        if (mode === 'msg') {
+            if (!hasSelection()) return fireMessage();
+            // 터치에서 선택 진행 중이면 기존처럼 취소 (네이티브 선택 메뉴 우선)
+            if (pressTouch) return cancel();
+            // 마우스: 더블클릭 등으로 단어가 선택된 채 누르고 있으면 선택 메뉴
+            return fireSelection();
+        }
+        fireSelection();   // 'drag' | 'sel'
+    };
+
     chatEl.addEventListener('pointerdown', (e) => {
         fired = false;
+        mode = 'msg';
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         if (!styleEnabled()) return;
 
@@ -435,65 +652,58 @@ function initLongPress(chatEl) {
         if (mes.querySelector('textarea.edit_textarea')) return; // 편집 중이면 무시
 
         const isTouch = e.pointerType !== 'mouse';
+        const inText = !!e.target.closest('.mes_text');
+
+        // 이미 선택된 글자 위를 누른 경우 → 선택 메뉴 모드
+        const selHit = inText && hasSelection() && pointOnSelection(e.clientX, e.clientY);
 
         // 터치 + 본문 영역: 텍스트 선택을 방해하지 않도록 길게 누르기를 시작하지 않음
-        if (isTouch && TOUCH_TEXT_SELECTABLE && e.target.closest('.mes_text') && isOnText(e.clientX, e.clientY)) return;
+        if (!selHit && isTouch && TOUCH_TEXT_SELECTABLE && inText && isOnText(e.clientX, e.clientY)) return;
 
         releaseNow();
         cancel();
-        const holdMs = isTouch ? HOLD_MS_TOUCH : HOLD_MS_MOUSE;
-        const visualMs = Math.min(VISUAL_MS, holdMs);
+        pressTouch = isTouch;
+        holdMs = isTouch ? HOLD_MS_TOUCH : HOLD_MS_MOUSE;
+        mode = selHit ? 'sel' : 'msg';
 
         pressedMes = mes;
         startX = e.clientX;
         startY = e.clientY;
-        mes.style.setProperty('--lpd-hold', `${visualMs}ms`);
 
-        // iOS 콜아웃 방지 (텍스트 선택 자체는 막지 않음)
-        if (isTouch) mes.classList.add('lpd-touch');
+        // 테두리 피드백은 터치 + 일반 길게 누르기에서만
+        if (isTouch && mode === 'msg') {
+            const visualMs = Math.min(VISUAL_MS, holdMs);
+            mes.style.setProperty('--lpd-hold', `${visualMs}ms`);
+            mes.classList.add('lpd-touch');   // iOS 콜아웃 방지 (텍스트 선택 자체는 막지 않음)
+            showTimer = setTimeout(() => {
+                if (pressedMes === mes) mes.classList.add('lpd-pressing');
+            }, holdMs - visualMs);
+        }
 
-        // 테두리는 팝업 직전(visualMs 전)부터만 표시
-        showTimer = setTimeout(() => {
-            if (pressedMes === mes) mes.classList.add('lpd-pressing');
-        }, holdMs - visualMs);
-
-        timer = setTimeout(() => {
-            const target = pressedMes;
-
-            // 텍스트 선택이 진행 중이면 팝업을 띄우지 않음
-            if (hasSelection()) {
-                cancel();
-                return;
-            }
-
-            fired = true;
-            // 타이머만 정리하고, 테두리 클래스는 AFTER_POPUP_MS 뒤에 제거
-            clearTimeout(timer);
-            clearTimeout(showTimer);
-            timer = null;
-            showTimer = null;
-            pressedMes = null;
-            if (target) {
-                target.classList.add('lpd-pressing');
-                releaseMes = target;
-                releaseTimer = setTimeout(releaseNow, AFTER_POPUP_MS);
-            }
-            window.getSelection()?.removeAllRanges();
-            navigator.vibrate?.(30);
-            if (target) showLongPressMenu(target);
-        }, holdMs);
+        timer = setTimeout(onHold, holdMs);
     });
 
     chatEl.addEventListener('pointermove', (e) => {
         if (!timer) return;
-        if (Math.hypot(e.clientX - startX, e.clientY - startY) > MOVE_TOLERANCE) cancel();
+        if (Math.hypot(e.clientX - startX, e.clientY - startY) <= MOVE_TOLERANCE) return;
+
+        // 마우스로 드래그해서 글자를 선택하는 중이면 취소하지 않고, 멈춘 지점부터 다시 시간을 잼
+        if (!pressTouch && mode !== 'sel' && e.buttons === 1) {
+            mode = 'drag';
+            startX = e.clientX;
+            startY = e.clientY;
+            clearTimeout(timer);
+            timer = setTimeout(onHold, holdMs);
+            return;
+        }
+        cancel();
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => chatEl.addEventListener(ev, cancel));
     chatEl.addEventListener('scroll', cancel, { passive: true });
 
-    // 텍스트 선택이 시작되면 대기 취소
+    // (터치) 텍스트 선택이 시작되면 대기 취소
     document.addEventListener('selectionchange', () => {
-        if (timer && hasSelection()) cancel();
+        if (timer && mode === 'msg' && pressTouch && hasSelection()) cancel();
     });
 
     // 길게 누른 직후 발생하는 click / contextmenu 차단
