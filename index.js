@@ -6,7 +6,7 @@
 //  - 접힌(저장된) 메시지의 바를 누르면 "임시로" 펼쳐집니다. (저장 상태는 변하지 않음)
 //  - 펼쳐진 메시지 안을 누르면 그대로 유지, 다른 메시지/빈 곳을 누르면 다시 접힙니다.
 //  - 저장된 접힘 상태는 메시지 액션의 아이콘(접기 설정 ↔ 접기 해제)으로 바뀝니다.
-//  - 메시지(접힌 바 포함)를 길게 누르면 팝업이 뜨고 Delete / Hide(Unhide) / Fold(Unfold) / Cancel 을 고를 수 있습니다.
+//  - 메시지(접힌 바 포함)를 길게 누르면 팝업이 뜨고 Hide(Unhide) / Delete / Fold(Unfold) / Cancel 을 고를 수 있습니다.
 
 import { chat, eventSource, event_types, saveChatConditional } from '../../../../script.js';
 
@@ -19,10 +19,10 @@ const TITLE_SET = 'Fold message';
 const TITLE_UNSET = 'Unfold message';
 
 // ===== 길게 누르기 설정 =====
-const HOLD_MS_MOUSE = 810;  // 마우스 길게 누르기 시간
-const HOLD_MS_TOUCH = 900;  // 터치(모바일) 길게 누르기 시간
+const HOLD_MS_MOUSE = 610;  // 마우스 길게 누르기 시간
+const HOLD_MS_TOUCH = 750;  // 터치(모바일) 길게 누르기 시간
 const VISUAL_MS = 300;      // 팝업 직전 이 시간 동안 테두리가 서서히 진해짐
-const AFTER_POPUP_MS = 200; // 팝업이 뜬 뒤에도 테두리를 유지하는 시간
+const AFTER_POPUP_MS = 80; // 팝업이 뜬 뒤에도 테두리를 유지하는 시간
 const MOVE_TOLERANCE = 10;  // px
 const LP_IGNORE = 'a, button, input, textarea, select, .mes_buttons, .mes_edit_buttons, .swipe_left, .swipe_right, .swipes-counter, .extraMesButtons, .mes_img_container, .mes_reasoning_details, [contenteditable="true"], .mes_text img, .mes_text video, .mes_text audio, .mes_text canvas';
 
@@ -344,24 +344,39 @@ async function showLongPressMenu(mes) {
         </div>`;
 
     const { callGenericPopup, POPUP_TYPE, POPUP_RESULT, executeSlashCommandsWithOptions } = ctx();
-    const CUSTOM_DELETE = POPUP_RESULT?.CUSTOM1 ?? 1001;
-    const CUSTOM_HIDE = POPUP_RESULT?.CUSTOM2 ?? 1002;
+    const CUSTOM_HIDE = POPUP_RESULT?.CUSTOM1 ?? 1001;
+    const CUSTOM_FOLD = POPUP_RESULT?.CUSTOM2 ?? 1002;
+    const RESULT_CANCEL = POPUP_RESULT?.NEGATIVE ?? 0;
 
     let action = null; // 'delete' | 'hide' | 'fold' | null
     if (callGenericPopup && POPUP_TYPE) {
-        // 커스텀 버튼은 OK 버튼 앞에 순서대로 들어가므로
-        // [Delete] [Hide] [Fold(OK)] [Cancel] 순서가 됩니다. (Delete 가 제일 왼쪽)
+        // OK 버튼(빨간색) = Delete.
+        // 버튼 배치: 윗줄 [Hide] [Delete] [Fold] / 아랫줄 가운데 [Cancel]
         const result = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', {
-            okButton: folded ? 'Unfold' : 'Fold',
+            okButton: 'Delete',
             cancelButton: 'Cancel',
+            defaultResult: RESULT_CANCEL,   // Enter / 기본 포커스는 Cancel (실수로 삭제 방지)
             customButtons: [
-                { text: 'Delete', result: CUSTOM_DELETE },
                 { text: hidden ? 'Unhide' : 'Hide', result: CUSTOM_HIDE },
+                { text: folded ? 'Unfold' : 'Fold', result: CUSTOM_FOLD },
             ],
+            onOpen: (popup) => {
+                const controls = popup.buttonControls;
+                const hideBtn = controls.querySelector(`[data-result="${CUSTOM_HIDE}"]`);
+                const foldBtn = controls.querySelector(`[data-result="${CUSTOM_FOLD}"]`);
+                if (!controls || !hideBtn || !foldBtn) return;
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:10px 20px;';
+                row.append(hideBtn, popup.okButton, foldBtn);
+                controls.style.flexDirection = 'column';
+                controls.style.alignItems = 'center';
+                controls.style.gap = '10px';
+                controls.prepend(row);   // Cancel 은 아랫줄 가운데에 남음
+            },
         });
-        if (result === CUSTOM_DELETE) action = 'delete';
+        if (POPUP_RESULT ? result === POPUP_RESULT.AFFIRMATIVE : result === true) action = 'delete';
         else if (result === CUSTOM_HIDE) action = 'hide';
-        else if (POPUP_RESULT ? result === POPUP_RESULT.AFFIRMATIVE : result === true) action = 'fold';
+        else if (result === CUSTOM_FOLD) action = 'fold';
     } else if (window.confirm('Delete this message?')) {
         action = 'delete';
     }
