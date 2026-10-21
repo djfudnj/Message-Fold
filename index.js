@@ -7,7 +7,7 @@
 //  - 펼쳐진 메시지 안을 누르면 그대로 유지, 다른 메시지/빈 곳을 누르면 다시 접힙니다.
 //  - 저장된 접힘 상태는 메시지 액션의 아이콘(접기 설정 ↔ 접기 해제)으로 바뀝니다.
 //  - 메시지(접힌 바 포함)를 길게 누르면 팝업이 뜨고 Hide(Unhide) / Delete / Fold(Unfold) / Cancel 을 고를 수 있습니다.
-//  - 글자를 드래그로 선택한 뒤 (드래그 끝에서 또는 선택 영역 위에서) 길게 누르면
+//  - 글자를 드래그로 선택한 뒤, 손을 떼고 선택된 글자 위를 다시 길게 누르면
 //    Edit selection / Delete selection 팝업이 뜹니다. (모바일: 선택 후 뜨는 복사/모두 선택 툴바 상태에서 선택된 글자를 더 길게 누르기)
 
 import { chat, eventSource, event_types, saveChatConditional, updateMessageBlock } from '../../../../script.js';
@@ -590,9 +590,8 @@ function initLongPress(chatEl) {
     let fired = false;
     let releaseTimer = null;   // 팝업 뜬 뒤 테두리를 잠깐 유지했다가 지우는 타이머
     let releaseMes = null;
-    // 'msg'  : 일반 길게 누르기
-    // 'drag' : 마우스로 드래그(선택) 중 → 멈춰서 누르고 있으면 선택 메뉴
-    // 'sel'  : 이미 선택된 글자 위에서 길게 누르기 → 선택 메뉴
+    // 'msg' : 일반 길게 누르기
+    // 'sel' : 이미 선택된 글자 위에서 길게 누르기 → 선택 메뉴
     let mode = 'msg';
     let pressTouch = false;
     let holdMs = HOLD_MS_MOUSE;
@@ -652,13 +651,10 @@ function initLongPress(chatEl) {
 
     const onHold = () => {
         if (mode === 'msg') {
-            if (!hasSelection()) return fireMessage();
-            // 터치에서 선택 진행 중이면 기존처럼 취소 (네이티브 선택 메뉴 우선)
-            if (pressTouch) return cancel();
-            // 마우스: 더블클릭 등으로 단어가 선택된 채 누르고 있으면 선택 메뉴
-            return fireSelection();
+            // 선택이 진행 중이면 팝업을 띄우지 않음 (드래그 도중에 뜨는 것 방지)
+            return hasSelection() ? cancel() : fireMessage();
         }
-        fireSelection();   // 'drag' | 'sel'
+        fireSelection();   // 'sel': 이미 선택된 글자 위를 다시 길게 누른 경우만
     };
 
     chatEl.addEventListener('pointerdown', (e) => {
@@ -707,15 +703,6 @@ function initLongPress(chatEl) {
         if (!timer) return;
         if (Math.hypot(e.clientX - startX, e.clientY - startY) <= MOVE_TOLERANCE) return;
 
-        // 마우스로 드래그해서 글자를 선택하는 중이면 취소하지 않고, 멈춘 지점부터 다시 시간을 잼
-        if (!pressTouch && mode !== 'sel' && e.buttons === 1) {
-            mode = 'drag';
-            startX = e.clientX;
-            startY = e.clientY;
-            clearTimeout(timer);
-            timer = setTimeout(onHold, holdMs);
-            return;
-        }
         cancel();
     });
     chatEl.addEventListener('pointerup', cancel);
