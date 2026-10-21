@@ -8,8 +8,7 @@
 //  - 저장된 접힘 상태는 메시지 액션의 아이콘(접기 설정 ↔ 접기 해제)으로 바뀝니다.
 //  - 메시지(접힌 바 포함)를 길게 누르면 팝업이 뜨고 Hide(Unhide) / Delete / Fold(Unfold) / Cancel 을 고를 수 있습니다.
 //  - 글자를 드래그로 선택한 뒤 (드래그 끝에서 또는 선택 영역 위에서) 길게 누르면
-//    Edit selection / Edit message / Delete selection 팝업이 뜹니다.
-//  - 빨간 테두리 피드백은 터치(모바일)에서만 나타납니다.
+//    Edit selection / Delete selection 팝업이 뜹니다. (모바일: 선택 후 뜨는 복사/모두 선택 툴바 상태에서 선택된 글자를 더 길게 누르기)
 
 import { chat, eventSource, event_types, saveChatConditional, updateMessageBlock } from '../../../../script.js';
 
@@ -24,6 +23,7 @@ const TITLE_UNSET = 'Unfold message';
 // ===== 길게 누르기 설정 =====
 const HOLD_MS_MOUSE = 610;  // 마우스 길게 누르기 시간
 const HOLD_MS_TOUCH = 750;  // 터치(모바일) 길게 누르기 시간
+const HOLD_MS_TOUCH_SEL = 600; // 터치: 이미 선택된 글자 위에서 길게 누르는 시간 (선택 메뉴용)
 const VISUAL_MS = 300;      // 팝업 직전 이 시간 동안 테두리가 서서히 진해짐
 const AFTER_POPUP_MS = 80; // 팝업이 뜬 뒤에도 테두리를 유지하는 시간
 const MOVE_TOLERANCE = 10;  // px
@@ -377,7 +377,9 @@ async function replaceSelection(id, text, occurrence, replacement) {
     await setMessageText(id, raw.slice(0, loc.start) + replacement + raw.slice(loc.end));
 }
 
-async function showSelectionMenu(mes, info, resetFired) {
+const countOccurrences = (raw, text) => (text ? raw.split(text).length - 1 : 0);
+
+async function showSelectionMenu(mes, info) {
     const id = Number(mes.getAttribute('mesid'));
     if (Number.isNaN(id) || !chat[id]) return;
 
@@ -393,51 +395,40 @@ async function showSelectionMenu(mes, info, resetFired) {
     const { callGenericPopup, POPUP_TYPE, POPUP_RESULT } = ctx();
     if (!callGenericPopup || !POPUP_TYPE) return;
 
-    const CUSTOM_EDIT_SEL = POPUP_RESULT?.CUSTOM1 ?? 1001;
-    const CUSTOM_EDIT_ALL = POPUP_RESULT?.CUSTOM2 ?? 1002;
+    const CUSTOM_EDIT = POPUP_RESULT?.CUSTOM1 ?? 1001;
     const RESULT_CANCEL = POPUP_RESULT?.NEGATIVE ?? 0;
 
+    // 윗줄 [Edit selection] [Delete selection] / 아랫줄 가운데 [Cancel]
     const result = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', {
         okButton: 'Delete selection',
         cancelButton: 'Cancel',
         defaultResult: RESULT_CANCEL,
-        customButtons: [
-            { text: 'Edit selection', result: CUSTOM_EDIT_SEL },
-            { text: 'Edit message', result: CUSTOM_EDIT_ALL },
-        ],
+        customButtons: [{ text: 'Edit selection', result: CUSTOM_EDIT }],
         onOpen: (popup) => {
             const controls = popup.buttonControls;
-            const selBtn = controls?.querySelector(`[data-result="${CUSTOM_EDIT_SEL}"]`);
-            const allBtn = controls?.querySelector(`[data-result="${CUSTOM_EDIT_ALL}"]`);
-            if (!controls || !selBtn || !allBtn) return;
+            const editBtn = controls?.querySelector(`[data-result="${CUSTOM_EDIT}"]`);
+            if (!controls || !editBtn) return;
             const row = document.createElement('div');
             row.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:10px 20px;';
-            row.append(selBtn, allBtn, popup.okButton);
+            row.append(editBtn, popup.okButton);
             controls.style.flexDirection = 'column';
             controls.style.alignItems = 'center';
             controls.style.gap = '10px';
-            controls.prepend(row);   // Cancel 은 아랫줄 가운데
+            controls.prepend(row);
         },
     });
 
     let action = null;
     if (POPUP_RESULT ? result === POPUP_RESULT.AFFIRMATIVE : result === true) action = 'delete';
-    else if (result === CUSTOM_EDIT_SEL) action = 'edit-selection';
-    else if (result === CUSTOM_EDIT_ALL) action = 'edit-message';
+    else if (result === CUSTOM_EDIT) action = 'edit';
     if (!action) return;
 
     if (!mes.isConnected || Number(mes.getAttribute('mesid')) !== id) return;
 
-    if (action === 'edit-message') {
-        // SillyTavern 기본 편집 모드(연필 버튼)를 그대로 엶
-        resetFired();
-        if (!mes.querySelector('#curEditTextarea')) mes.querySelector('.mes_edit')?.click();
-        return;
-    }
-
-    // 원문에서 위치를 못 찾으면(마크다운/매크로/정규식 때문에 화면과 원문이 다른 경우) 미리 알림
-    if (!findInRaw(String(chat[id].mes ?? ''), text, occurrence)) {
-        window.toastr?.warning('Could not locate the selected text in the message source. Use "Edit message" instead.');
+    // 원문에 해당 글자가 없으면(매크로/정규식 등으로 화면과 원문이 다른 경우) 알림
+    const raw0 = String(chat[id].mes ?? '');
+    if (!raw0.includes(text)) {
+        window.toastr?.warning('Could not locate the selected text in the message source.');
         return;
     }
 
@@ -446,17 +437,46 @@ async function showSelectionMenu(mes, info, resetFired) {
         return;
     }
 
-    // edit-selection
+    // ----- Edit selection: 바꿀 글자를 입력. 같은 글자가 여러 개면 "모두 바꾸기" 체크박스 표시 -----
+    const total = countOccurrences(raw0, text);
+    let replaceAll = false;
+    const checkbox = total > 1
+        ? `<label class="checkbox_label" style="justify-content:center;margin-top:10px">
+               <input type="checkbox" id="mf-replace-all">
+               <span>Replace all ${total} occurrences in this message</span>
+           </label>`
+        : '';
+
     const edited = await callGenericPopup(
-        `<h3>Edit selection</h3><div style="text-align:left;opacity:.8;margin-top:8px"><b>#${id}</b> ${escapeHtml(name)}</div>`,
+        `<h3>Edit selection</h3>
+         <div style="text-align:left;opacity:.8;margin-top:8px"><b>#${id}</b> ${escapeHtml(name)}</div>
+         ${checkbox}`,
         POPUP_TYPE.INPUT,
         text,
-        { rows: 4, okButton: 'Save', cancelButton: 'Cancel' },
+        {
+            rows: 4,
+            okButton: 'Save',
+            cancelButton: 'Cancel',
+            onOpen: () => {
+                const cb = document.getElementById('mf-replace-all');
+                cb?.addEventListener('change', () => { replaceAll = cb.checked; });
+            },
+        },
     );
-    if (typeof edited !== 'string') return;
+    if (typeof edited !== 'string' || edited === text) return;
     if (!mes.isConnected || Number(mes.getAttribute('mesid')) !== id) return;
-    if (edited === text) return;
-    await replaceSelection(id, text, occurrence, edited);
+
+    if (replaceAll) {
+        const cur = String(chat[id]?.mes ?? '');
+        if (!cur.includes(text)) {
+            window.toastr?.warning('The message changed; nothing was replaced.');
+            return;
+        }
+        await setMessageText(id, cur.split(text).join(edited));
+        window.toastr?.success(`Replaced ${countOccurrences(cur, text)} occurrence(s).`);
+    } else {
+        await replaceSelection(id, text, occurrence, edited);
+    }
 }
 
 // (x, y) 지점에 실제 글자가 있는지 판정 (본문 블록의 빈 공간은 false)
@@ -607,7 +627,7 @@ function initLongPress(chatEl) {
         cancel();
         window.getSelection()?.removeAllRanges();
         navigator.vibrate?.(30);
-        showSelectionMenu(info.mes, info, () => { fired = false; });
+        showSelectionMenu(info.mes, info);
     };
 
     const fireMessage = () => {
@@ -663,8 +683,8 @@ function initLongPress(chatEl) {
         releaseNow();
         cancel();
         pressTouch = isTouch;
-        holdMs = isTouch ? HOLD_MS_TOUCH : HOLD_MS_MOUSE;
         mode = selHit ? 'sel' : 'msg';
+        holdMs = !isTouch ? HOLD_MS_MOUSE : (selHit ? HOLD_MS_TOUCH_SEL : HOLD_MS_TOUCH);
 
         pressedMes = mes;
         startX = e.clientX;
@@ -698,7 +718,13 @@ function initLongPress(chatEl) {
         }
         cancel();
     });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => chatEl.addEventListener(ev, cancel));
+    chatEl.addEventListener('pointerup', cancel);
+    ['pointercancel', 'pointerleave'].forEach((ev) => chatEl.addEventListener(ev, () => {
+        // 모바일에서 선택된 글자를 누르고 있을 때는 브라우저가 pointercancel 을 보내도 계속 대기
+        // (손가락을 떼거나 크게 움직이거나 스크롤하면 취소됨)
+        if (pressTouch && mode === 'sel') return;
+        cancel();
+    }));
     chatEl.addEventListener('scroll', cancel, { passive: true });
 
     // (터치) 텍스트 선택이 시작되면 대기 취소
