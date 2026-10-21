@@ -9,16 +9,21 @@
 //  - 메시지(접힌 바 포함)를 길게 누르면 팝업이 뜨고 Hide(Unhide) / Delete / Fold(Unfold) / Cancel 을 고를 수 있습니다.
 //  - 글자를 드래그로 선택한 뒤, 손을 떼고 선택된 글자 위를 다시 길게 누르면
 //    Edit selection / Delete selection 팝업이 뜹니다. (모바일: 선택 후 뜨는 복사/모두 선택 툴바 상태에서 선택된 글자를 더 길게 누르기)
+//  - Edit selection 에서 같은 글자가 여러 개면 "모두 바꾸기" 체크박스로 한 번에 교체할 수 있습니다.
+//  - 빨간 테두리 피드백은 터치(모바일)에서만 나타납니다.
 
 import { chat, eventSource, event_types, saveChatConditional, updateMessageBlock } from '../../../../script.js';
 
 const KEY = 'folded';
 
-// 상태에 따라 번갈아 나오는 아이콘 (message hide/unhide 처럼 같은 자리에서 교체)
-const ICON_SET = 'fa-compress';   // 아직 접기 설정이 안 된 상태 → 누르면 접기 설정
-const ICON_UNSET = 'fa-expand';   // 접기 설정된 상태 → 누르면 접기 해제
+// 상태에 따라 번갈아 나오는 두 개의 버튼 (message hide/unhide 처럼 서로 다른 버튼이 같은 자리에서 교체)
+//  - .mes_fold   : 아직 접기 설정이 안 된 상태에서 보임 → 누르면 접기 설정
+//  - .mes_unfold : 접기 설정된 상태에서 보임        → 누르면 접기 해제
+const ICON_SET = 'fa-compress';
+const ICON_UNSET = 'fa-expand';
 const TITLE_SET = 'Fold message';
 const TITLE_UNSET = 'Unfold message';
+const FOLD_BTN_SELECTOR = '.mes_fold, .mes_unfold';
 
 // ===== 길게 누르기 설정 =====
 const HOLD_MS_MOUSE = 610;  // 마우스 길게 누르기 시간
@@ -126,12 +131,18 @@ function render(mes) {
     mes.classList.toggle('mf-folded', collapsed);
     mes.classList.toggle('mf-pinned', folded);
 
-    // 액션 아이콘: 저장 상태에 따라 같은 자리에서 교체
-    const icon = mes.querySelector('.mes_fold');
-    if (icon) {
-        icon.classList.toggle(ICON_SET, !folded);
-        icon.classList.toggle(ICON_UNSET, folded);
-        icon.title = folded ? TITLE_UNSET : TITLE_SET;
+    // 액션 아이콘: 저장 상태에 따라 두 버튼 중 하나만 보이게 (hide/unhide 와 같은 방식)
+    const foldBtn = mes.querySelector('.mes_fold');
+    if (foldBtn) {
+        // 예전 버전(아이콘이 번갈아 바뀌던 단일 버튼)에서 남은 클래스 정리
+        foldBtn.classList.remove(ICON_UNSET);
+        foldBtn.classList.add(ICON_SET);
+        foldBtn.title = TITLE_SET;
+        foldBtn.style.display = folded ? 'none' : '';
+    }
+    const unfoldBtn = mes.querySelector('.mes_unfold');
+    if (unfoldBtn) {
+        unfoldBtn.style.display = folded ? '' : 'none';
     }
 
     // 높이만 풀어줌 (display/padding/폭은 테마 그대로 유지)
@@ -175,13 +186,22 @@ function decorate(mes) {
     if (Number.isNaN(id) || !chat[id]) return;
 
     // 메시지 액션 버튼
+    // (다른 확장이 버튼을 .extraMesButtons 밖으로 옮겼을 수 있으므로 mes 전체에서 찾는다)
     const buttons = mes.querySelector('.extraMesButtons');
-    if (buttons && !buttons.querySelector('.mes_fold')) {
-        const btn = document.createElement('div');
-        btn.className = `mes_button mes_fold fa-solid ${ICON_SET} interactable`;
-        btn.tabIndex = 0;
-        btn.title = TITLE_SET;
-        buttons.prepend(btn);
+    let foldBtn = mes.querySelector('.mes_fold');
+    if (buttons && !foldBtn) {
+        foldBtn = document.createElement('div');
+        foldBtn.className = `mes_button mes_fold fa-solid ${ICON_SET} interactable`;
+        foldBtn.tabIndex = 0;
+        foldBtn.title = TITLE_SET;
+        buttons.prepend(foldBtn);
+    }
+    if (foldBtn && !mes.querySelector('.mes_unfold')) {
+        const unfoldBtn = document.createElement('div');
+        unfoldBtn.className = `mes_button mes_unfold fa-solid ${ICON_UNSET} interactable`;
+        unfoldBtn.tabIndex = 0;
+        unfoldBtn.title = TITLE_UNSET;
+        foldBtn.after(unfoldBtn); // fold 바로 뒤 (같은 자리에서 교체되는 짝)
     }
 
     // 접혔을 때 메시지를 대신할 한 줄 바 (.mes_block 안 -> 기존 메시지 블록과 폭 동일)
@@ -249,7 +269,7 @@ function onDocumentClick(e) {
     if (!(el instanceof Element)) return;
 
     // 1) 접기 설정/해제 아이콘
-    const foldBtn = el.closest('.mes_fold');
+    const foldBtn = el.closest(FOLD_BTN_SELECTOR);
     if (foldBtn) {
         const mes = foldBtn.closest('.mes');
         if (mes) toggleFold(mes);
@@ -286,7 +306,7 @@ function onDocumentClick(e) {
 
 const ctx = () => SillyTavern.getContext();
 
-// Flat / Bubble 모드에서만 작동 (Document 모드 제외)
+// 모든 채팅 스타일(Flat / Bubble / Document)에서 작동
 const styleEnabled = () => true;
 
 const escapeHtml = (t) => t.replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -737,12 +757,12 @@ jQuery(() => {
 
     chatEl.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
-        const t = e.target.closest?.('.mes_fold, .mf-placeholder');
+        const t = e.target.closest?.(`${FOLD_BTN_SELECTOR}, .mf-placeholder`);
         if (!t) return;
         e.preventDefault();
         const mes = t.closest('.mes');
         if (!mes) return;
-        if (t.classList.contains('mes_fold')) toggleFold(mes);
+        if (t.matches(FOLD_BTN_SELECTOR)) toggleFold(mes);
         else openTemp(mes);
     });
 
