@@ -98,6 +98,15 @@
     animation: lpd-hold var(--lpd-hold, 250ms) linear forwards;
 }
 
+/* 터치로 여백/아바타 등을 길게 누르는 동안에는 텍스트 자동 선택을 막음
+   (손가락을 떼면 클래스가 제거되어 원래대로 선택 가능) */
+#chat .mes.lpd-nosel,
+#chat .mes.lpd-nosel * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+}
+
 /* iOS 길게 누르기 콜아웃만 방지 (텍스트 선택은 막지 않음) */
 #chat .mes.lpd-touch,
 #chat .mes.lpd-touch * {
