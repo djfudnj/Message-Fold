@@ -367,7 +367,7 @@ async function showLongPressMenu(mes) {
                 if (!controls || !hideBtn || !foldBtn) return;
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:10px 20px;';
-                row.append(hideBtn, popup.okButton, foldBtn);
+                row.append(hideBtn, foldBtn, popup.okButton);
                 controls.style.flexDirection = 'column';
                 controls.style.alignItems = 'center';
                 controls.style.gap = '10px';
