@@ -18,7 +18,7 @@ A SillyTavern extension that lets you fold long messages into a single bar, and 
 
 
 
-* **Selected text menu** – Select some text inside a message, then press and hold to get a popup: Edit selection, Delete selection, or Cancel.
+* **Selected text menu** – Select some text inside a message, then press again and hold to get a popup: Edit, Delete, or Cancel.
 * **Replace all** – If the selected text appears more than once in the message, Edit selection shows a "Replace all" checkbox. Type the new text, check the box, and every occurrence in that message is replaced at once (e.g. change every "potato" to "carrot").
 
 ## Notes
@@ -47,7 +47,7 @@ A SillyTavern extension that lets you fold long messages into a single bar, and 
 
 
 
-* **선택한 글자 메뉴** – 메시지 안의 글자를 선택한 뒤 길게 누르면 팝업이 뜹니다 : Edit selection(선택 부분 수정), Delete selection(선택 부분 삭제), Cancel(취소).
+* **선택한 글자 메뉴** – 메시지 안의 글자를 선택한 뒤 한번 더 길게 누르면 팝업이 뜹니다 : Edit(선택 부분 수정), Delete(선택 부분 삭제), Cancel(취소).
 * **모두 바꾸기** – 선택한 글자가 메시지 안에 여러 번 나오면, Edit selection 창에 "모두 바꾸기" 체크박스가 나타납니다. 바꿀 글자를 입력하고 체크한 뒤 저장하면 그 메시지 안의 해당 글자가 한 번에 모두 바뀝니다. (예: "감자" → "당근")
 
 ## 참고 사항
