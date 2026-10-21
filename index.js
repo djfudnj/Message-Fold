@@ -287,7 +287,7 @@ function onDocumentClick(e) {
 const ctx = () => SillyTavern.getContext();
 
 // Flat / Bubble 모드에서만 작동 (Document 모드 제외)
-const styleEnabled = () => !document.body.classList.contains('documentstyle');
+const styleEnabled = () => true;
 
 const escapeHtml = (t) => t.replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
