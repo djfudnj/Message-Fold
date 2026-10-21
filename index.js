@@ -421,10 +421,10 @@ async function showSelectionMenu(mes, info) {
     const RESULT_CANCEL = POPUP_RESULT?.NEGATIVE ?? 0;
 
     const result = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', {
-        okButton: 'Delete selection',
+        okButton: 'Delete',
         cancelButton: 'Cancel',
         defaultResult: RESULT_CANCEL,
-        customButtons: [{ text: 'Edit selection', result: CUSTOM_EDIT }],
+        customButtons: [{ text: 'Edit', result: CUSTOM_EDIT }],
     });
 
     let action = null;
