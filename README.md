@@ -4,15 +4,22 @@ A SillyTavern extension that lets you fold long messages into a single bar, and 
 
 ## Features
 
+<img width="1053" height="411" alt="화면 캡처 2026-10-21 175828" src="https://github.com/user-attachments/assets/f89acdad-bbed-47e8-8ac7-21666090124d" />
+
+
 * **Fold / Unfold** – Click the fold icon in a message's action buttons to collapse it into a slim bar.
 * **Peek** – Tap a folded bar to open it temporarily. Tap elsewhere and it folds again. (To fully restore the message, click the uncollapse icon again.)
 
+<img width="651" height="275" alt="화면 캡처 2026-10-21 175751" src="https://github.com/user-attachments/assets/d329bf1c-bead-48cb-b85b-619a9e39f9f6" />
+
 * **Long press menu** – Press and hold a message to get a popup: Hide / Unhide, Delete, Fold / Unfold, or Cancel. The delete option works almost the same as SillyTavern's built-in "Delete this message", but it's more convenient: you don't need to open the edit window first.
+
+<img width="1036" height="342" alt="화면 캡처 2026-10-21 175858" src="https://github.com/user-attachments/assets/4a2e4877-163e-4294-b0c1-9d67a72ca902" />
+<img width="701" height="326" alt="화면 캡처 2026-10-21 180244" src="https://github.com/user-attachments/assets/12c3f55a-bbd3-4344-9bf9-2477941c8a05" />
+<img width="1046" height="348" alt="화면 캡처 2026-10-21 180300" src="https://github.com/user-attachments/assets/cd8b9db7-df7b-46d1-b51f-af53289f572b" />
+
+
 * **Selected text menu** – Select some text inside a message, then press and hold to get a popup: Edit selection, Delete selection, or Cancel.
-* **Desktop:** drag to select, then hold the mouse button still at the end of the drag (or press and hold on the already-selected text).
-* **Mobile:** select text as usual (the Copy / Select all toolbar appears), then press and hold the selected text a bit longer.
-
-
 * **Replace all** – If the selected text appears more than once in the message, Edit selection shows a "Replace all" checkbox. Type the new text, check the box, and every occurrence in that message is replaced at once (e.g. change every "potato" to "carrot").
 
 ## Notes
@@ -30,15 +37,20 @@ A SillyTavern extension that lets you fold long messages into a single bar, and 
 
 ## 주요 기능
 
+<img width="1053" height="411" alt="화면 캡처 2026-10-21 175828" src="https://github.com/user-attachments/assets/f89acdad-bbed-47e8-8ac7-21666090124d" />
+
 * **접기 / 펼치기** – 메시지 액션 버튼의 접기 아이콘을 누르면 메시지가 얇게 접힙니다.
 * **미리보기** – 접힌 바를 누르면 임시로 펼쳐지고, 다른 곳을 누르면 다시 접힌 상태로 되돌아옵니다. (접힌 상태를 완전히 해제하려면 해제 아이콘을 다시 누르세요)
 
-* **길게 누르기 메뉴** – 메시지를 길게 누르면 팝업이 뜹니다 : Hide / Unhide(숨기기/숨김 해제), Delete(삭제), Fold / Unfold(접기/펼치기), Cancel(취소). 삭제 기능은 SillyTavern 기본 "메시지 삭제"와 동일하게 작동하지만, 편집 창을 따로 열 필요가 없어 더 편리합니다.
+<img width="651" height="275" alt="화면 캡처 2026-10-21 175751" src="https://github.com/user-attachments/assets/d329bf1c-bead-48cb-b85b-619a9e39f9f6" />
+
+* **길게 누르기 메뉴** – 메시지를 길게 누르면 팝업이 뜹니다 : Hide / Unhide(숨기기/숨김 해제), Delete(삭제), Fold / Unfold(접기/펼치기), Cancel(취소). 삭제 기능은 SillyTavern 기본 "메시지 삭제"와 동일하게 작동하지만, 편집 창을 따로 열 필요가 없어 조금 더 편리하게 사용할 수 있습니다.
+
+<img width="1036" height="342" alt="화면 캡처 2026-10-21 175858" src="https://github.com/user-attachments/assets/4a2e4877-163e-4294-b0c1-9d67a72ca902" />
+<img width="701" height="326" alt="화면 캡처 2026-10-21 180244" src="https://github.com/user-attachments/assets/12c3f55a-bbd3-4344-9bf9-2477941c8a05" />
+<img width="1046" height="348" alt="화면 캡처 2026-10-21 180300" src="https://github.com/user-attachments/assets/cd8b9db7-df7b-46d1-b51f-af53289f572b" />
+
 * **선택한 글자 메뉴** – 메시지 안의 글자를 선택한 뒤 길게 누르면 팝업이 뜹니다 : Edit selection(선택 부분 수정), Delete selection(선택 부분 삭제), Cancel(취소).
-* **컴퓨터:** 드래그로 글자를 선택하고, 드래그가 끝나는 지점에서 마우스를 떼지 않고 가만히 누르고 있거나, 이미 선택된 글자 위를 길게 누르세요.
-* **모바일:** 평소처럼 글자를 선택해서 복사 / 모두 선택 툴바가 뜬 상태에서, 선택된 글자를 더 길게 누르세요.
-
-
 * **모두 바꾸기** – 선택한 글자가 메시지 안에 여러 번 나오면, Edit selection 창에 "모두 바꾸기" 체크박스가 나타납니다. 바꿀 글자를 입력하고 체크한 뒤 저장하면 그 메시지 안의 해당 글자가 한 번에 모두 바뀝니다. (예: "감자" → "당근")
 
 ## 참고 사항
