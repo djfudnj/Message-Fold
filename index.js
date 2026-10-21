@@ -23,7 +23,7 @@ const HOLD_MS_MOUSE = 810;  // 마우스 길게 누르기 시간
 const HOLD_MS_TOUCH = 900;  // 터치(모바일) 길게 누르기 시간
 const VISUAL_MS = 300;      // 팝업 직전 이 시간 동안만 테두리 표시
 const MOVE_TOLERANCE = 10;  // px
-const LP_IGNORE = 'a, button, input, textarea, select, .mes_buttons, .mes_edit_buttons, .swipe_left, .swipe_right, .swipes-counter, .extraMesButtons, .mes_img_container, .mes_reasoning_details, [contenteditable="true"]';
+const LP_IGNORE = 'a, button, input, textarea, select, .mes_buttons, .mes_edit_buttons, .swipe_left, .swipe_right, .swipes-counter, .extraMesButtons, .mes_img_container, .mes_reasoning_details, [contenteditable="true"], .mes_text img, .mes_text video, .mes_text audio, .mes_text canvas';
 
 // true: 터치 기기에서 본문(.mes_text)을 길게 누르면 팝업 대신 텍스트 선택이 동작
 //       (이름/아바타/여백/접힌 바 에서만 길게 누르기 작동)
